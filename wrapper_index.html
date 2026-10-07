@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#1a237e">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="ZUB Management">
+  <title>ZUB'S SOLUTIONS — Management Portal</title>
+
+  <!-- GAS deployment URL configured ✅ (updated 2026-09-22) -->
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      width: 100%; height: 100%;
+      overflow: hidden;
+      background: #1a237e;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+
+    /* Full-screen iframe — no borders, no scrollbars on the wrapper */
+    #app-frame {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border: none;
+      display: block;
+    }
+
+    /* Loading screen shown while the iframe boots */
+    #loader {
+      position: fixed;
+      inset: 0;
+      background: #1a237e;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      z-index: 9999;
+      transition: opacity .4s ease;
+    }
+    #loader.hidden { opacity: 0; pointer-events: none; }
+
+    .loader-logo {
+      font-size: 48px;
+      font-weight: 900;
+      color: #fff;
+      letter-spacing: -1px;
+      text-align: center;
+      line-height: 1.1;
+    }
+    .loader-sub {
+      font-size: 13px;
+      color: rgba(255,255,255,.65);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+    .loader-spinner {
+      width: 36px;
+      height: 36px;
+      border: 3px solid rgba(255,255,255,.2);
+      border-top-color: #ffd54f;
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+  <!-- Loading splash (disappears once iframe loads) -->
+  <div id="loader">
+    <div class="loader-logo">ZUB'S<br>SOLUTIONS</div>
+    <div class="loader-sub">Management Portal</div>
+    <div class="loader-spinner"></div>
+  </div>
+
+  <!-- Message-alert helper: lets the portal pop up desktop notifications for new Founders Desk chat -->
+  <div id="notify-bar" style="display:none;position:fixed;left:50%;transform:translateX(-50%);bottom:14px;z-index:10000;background:#1B2A4A;color:#fff;border-radius:999px;padding:8px 8px 8px 16px;font-size:13px;box-shadow:0 6px 22px #0006;align-items:center;gap:10px;">
+    <span>&#128276; Get a pop-up when a new Founders Desk message arrives?</span>
+    <button id="notify-yes" style="background:#ffd54f;color:#1a237e;border:0;border-radius:999px;padding:6px 14px;font-weight:700;cursor:pointer;">Turn on</button>
+    <button id="notify-no" style="background:transparent;color:#fff;border:0;padding:6px 10px;cursor:pointer;opacity:.7;">Not now</button>
+  </div>
+
+  <iframe
+    id="app-frame"
+    src="https://script.google.com/macros/s/AKfycbwxKu1tDhI7mm8HNsLR3YwQZ7Ohvi4DAgQvrVhNWc8Ufd3_FXeeRfLU-Ca_UzMQE-PS7A/exec?embedded=true"
+    allow="camera; microphone; geolocation"
+    loading="eager"
+  ></iframe>
+
+  <script>
+    // Hide the loading screen once the iframe has loaded
+    document.getElementById('app-frame').addEventListener('load', function() {
+      var loader = document.getElementById('loader');
+      loader.classList.add('hidden');
+      setTimeout(function() { loader.style.display = 'none'; }, 450);
+    });
+
+
+    // ── Founders Desk message alerts ─────────────────────────────────────
+    (function() {
+      var frame = document.getElementById('app-frame');
+      var bar = document.getElementById('notify-bar');
+      var baseTitle = document.title, flash = null, unread = 0;
+      function stopFlash() { if (flash) { clearInterval(flash); flash = null; } unread = 0; document.title = baseTitle; }
+      window.addEventListener('focus', stopFlash);
+      document.addEventListener('visibilitychange', function() { if (!document.hidden) stopFlash(); });
+      function showBar() {
+        if (!('Notification' in window) || Notification.permission !== 'default') return;
+        try { if (localStorage.getItem('zubNotifyNo') === '1') return; } catch (e) {}
+        bar.style.display = 'flex';
+      }
+      document.getElementById('notify-yes').onclick = function() {
+        bar.style.display = 'none';
+        Notification.requestPermission();
+      };
+      document.getElementById('notify-no').onclick = function() {
+        bar.style.display = 'none';
+        try { localStorage.setItem('zubNotifyNo', '1'); } catch (e) {}
+      };
+      window.addEventListener('message', function(e) {
+        if (e.source !== frame.contentWindow || !e.data) return;
+        if (e.data.zub === 'askNotify') { showBar(); return; }
+        if (e.data.zub !== 'notify') return;
+        var title = String(e.data.title || 'New message').slice(0, 120), body = String(e.data.body || '').slice(0, 200);
+        if (document.hidden || !document.hasFocus()) {
+          unread++;
+          if (!flash) {
+            var on = false;
+            flash = setInterval(function() { on = !on; document.title = on ? '(' + unread + ') New message' : baseTitle; }, 1000);
+          }
+          if ('Notification' in window && Notification.permission === 'granted') {
+            try {
+              var n = new Notification(title, { body: body, tag: e.data.tag || 'zub', renotify: true });
+              n.onclick = function() { window.focus(); try { frame.contentWindow.postMessage({ zub: 'openFounders' }, '*'); } catch (x) {} n.close(); };
+            } catch (x) {}
+          }
+        }
+      });
+    })();
+
+    // Fallback: hide loader after 8 seconds regardless
+    setTimeout(function() {
+      var loader = document.getElementById('loader');
+      if (loader) { loader.classList.add('hidden'); setTimeout(function(){ loader.style.display='none'; }, 450); }
+    }, 8000);
+  </script>
+</body>
+</html>
